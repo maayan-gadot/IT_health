@@ -1,0 +1,101 @@
+{
+  "time_window": 60,
+  "averaging_window": 5,
+  "moving_avg_step": 2,
+
+
+  "hosts": [
+    {
+      "host": "Zabbix server",
+      "host_name": "Zabbix server",
+      "host_weight": 0.33,
+
+      "metrics": [
+        {
+          "name": "CPU utilization",
+          "key": "system.cpu.util",
+          "function": "z_shape",
+          "min": 0,
+          "max": 80,
+          "weight": 0.34,
+          "enabled": true
+        },
+        {
+          "name": "VM memory size",
+          "key": "vm.memory.size[pavailable]",
+          "function": "z_shape",
+          "min": 0,
+          "max": 80,
+          "weight": 0.33,
+          "enabled": true
+        },
+        {
+          "name": "vfs dev util",
+          "key": "vfs.dev.util[xvda]",
+          "function": "z_shape",
+          "min": 0,
+          "max": 70,
+          "weight": 0.33,
+          "enabled": true
+        }
+        
+      ]
+    },
+
+{
+      "host": "Zabbix_Docker",
+      "host_name": "test server",
+      "host_weight": 0.33,
+
+      "metrics": [
+        {
+          "name": "cpu test",
+          "key": "docker.container_stats.cpu_pct_usage[\"/cpu-test\"]",
+          "function": "z_shape",
+          "min": 5,
+          "max": 80,
+          "weight": 1.0,
+          "enabled": true
+        }
+      ]
+    },
+
+    {
+      "host": "Zabbix_Docker",
+      "host_name": "Zabbix_Docker",
+      "host_weight": 0.34,
+      "metrics": [
+        
+        {
+          "name": "cpu pct usage",
+          "key": "docker.container_stats.cpu_pct_usage[\"/zabbix-postgres-db-1\"]",
+          "function": "z_shape",
+          "min": 0,
+          "max": 80,
+          "weight": 0.5,
+          "enabled": true
+        },
+        {
+          "name": "docker memory usage",
+          
+          "key": "docker.container_stats.memory.usage[\"/zabbix-postgres-db-1\"]",
+          "function": "z_shape",
+          "min": 0,
+          "max": 2,
+          "weight": 0.5,
+          "enabled": true
+        },              
+        {
+          "name": "docker.container_stats.cpu_usage.kernel",
+          "key": "docker.container_stats.cpu_usage.kernel.rate[\"/zabbix-postgres-db-1\"]",
+          "function": "s_shape",
+          "min": 0,
+          "max": 80,
+          "weight": 0.5,
+          "enabled": true
+        }
+      ]
+    }
+  ]
+
+}
