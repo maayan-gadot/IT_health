@@ -1,4 +1,3 @@
-
 import os
 import requests
 import json
@@ -14,6 +13,8 @@ os.system('cls' if os.name == 'nt' else 'clear')
 nan_value = float('nan')
 
 print('PMD zabbix: initialization')
+
+ENABLE_CONTINUOUS_MODE = True  # Toggle continuous mode
 
 CONFIG_FILE = "config.json"
 PROPERTIES_FILE = "config.properties"
@@ -73,9 +74,9 @@ def get_metrics(auth_token, host_id, headers):
     response = requests.post(ZABBIX_URL, json=payload, headers=headers)
     return response.json()['result']
 
-def get_history(auth_token, itemid, time_window, headers, history_type=0):
+def get_history(auth_token, itemid, time_window, headers, history_type=0, start_time=None):
     time_to = int(time.time())
-    time_from = time_to - time_window
+    time_from = start_time if start_time else (time_to - time_window)
     payload = {
         "jsonrpc": "2.0",
         "method": "history.get",
@@ -107,10 +108,7 @@ def writeAPI(point: Point):
     try:
         line = point.to_line_protocol()
         response = requests.post(INFLUX_URL, params=params, headers=headers_influx, data=line)
-        if response.ok:
-            # print(f"✅ Successfully wrote to InfluxDB: {line}")
-            pass
-        else:
+        if not response.ok:
             print(f"❌ Failed to write to InfluxDB: {response.status_code} {response.text}")
     except Exception as e:
         print(f"❌ Exception during write:{e}")
@@ -128,6 +126,20 @@ def z_shape(value, min_th, max_th):
         return max(0.0, min(1.0, norm))
     except ZeroDivisionError:
         return 0.0
+
+def main_loop(start_from=None):
+    print("[main_loop] Running in", "continuous" if ENABLE_CONTINUOUS_MODE else "historical", "mode")
+    import score_cal
+    score_cal.run(
+        config=config,
+        auth_token=auth_token,
+        headers_zabbix=headers_zabbix,
+        TIME_WINDOW=TIME_WINDOW,
+        AVERAGING_WINDOW=AVERAGING_WINDOW,
+        MOVING_AVG_STEP=MOVING_AVG_STEP,
+        start_from=start_from,
+        ENABLE_CONTINUOUS_MODE=ENABLE_CONTINUOUS_MODE
+    )
 
 if __name__ == "__main__":
     config = load_config()
@@ -188,153 +200,16 @@ if __name__ == "__main__":
     AVERAGING_WINDOW = config.get("averaging_window", 5) * 60
     MOVING_AVG_STEP = config.get("moving_avg_step", 2) * 60
 
-    targets = config["hosts"]
-    host_score_data = defaultdict(lambda: {"total": 0.0, "weight": 0.0})
-    grouped_by_host_name = defaultdict(list)
-    for target in targets:
-        grouped_by_host_name[target["host_name"]].append(target)
+    if ENABLE_CONTINUOUS_MODE:
+        print("Continuous mode active: script will loop indefinitely.")
+        start_time = int(time.time()) - MOVING_AVG_STEP
+        while True:
+            main_loop(start_from=start_time)
+            start_time = int(time.time())
+            time.sleep(MOVING_AVG_STEP)
+    else:
+        print("One-shot mode active: script will process historical data.")
+        main_loop()
 
-    # Determine global clock bounds across all hosts and metrics
-    all_clocks = []
-    for target in targets:
-        host_id = get_host_id(auth_token, target["host"], headers_zabbix)
-        if not host_id:
-            continue
-        items = get_metrics(auth_token, host_id, headers_zabbix)
-        items_dict = {item['key_']: item for item in items}
-        for metric in target["metrics"]:
-            if not metric.get("enabled", True):
-                continue
-            item = items_dict.get(metric["key"])
-            if not item:
-                continue
-            item.get
-            history = get_history(auth_token, item['itemid'], TIME_WINDOW, headers_zabbix)
-            clocks = [int(h['clock']) for h in history if 'clock' in h]
-            all_clocks.extend(clocks)
-
-    global_start = min(all_clocks) if all_clocks else int(time.time()) - TIME_WINDOW
-    global_end = max(all_clocks) if all_clocks else int(time.time())
-    shared_windows = list(range(global_start, global_end, MOVING_AVG_STEP))
-
- 
-    # Continue with metric and windowed processing, using shared_windows consistently...
-    for host_name, host_targets in grouped_by_host_name.items():
-        if not host_targets:
-            continue
-        print(host_name)
-        first_host = host_targets[0]
-        host_id = get_host_id(auth_token, first_host["host"], headers_zabbix)
-        if not host_id:
-            print("! Host not found: " + first_host["host"])
-            continue
-
-        simple_host = host_name.lower().replace(" ", "_")
-        items = get_metrics(auth_token, host_id, headers_zabbix)
-        items_dict = {item['key_']: item for item in items}
-
-        histories = {}
-        all_windows = defaultdict(lambda: {"scores": [], "weighted": [], "raw": []})
-
-        for target in host_targets:
-            target_metrics = target["metrics"]
-            host_weight = target.get("host_weight", 1.0)
-
-            for metric in target_metrics:
-                metric_key = metric.get("key")
-                if not metric.get("enabled", True) or metric_key not in items_dict:
-                    continue
-                
-                # print(metric_key)
-
-                item = items_dict[metric_key]
-                value_type = int(item.get("value_type", 0))  
-
-                history = sorted(get_history(auth_token, item['itemid'], TIME_WINDOW, headers_zabbix,history_type=value_type), key=lambda x: int(x['clock']))
-                if not history:
-                    print("! metric not found: " + item['key_'])
-                    continue
-                histories[metric_key] = history
-
-        for metric_key, history in histories.items():
-            for target in host_targets:
-                metric = next((m for m in target['metrics'] if m['key'] == metric_key), None)
-                if not metric:
-                    continue
-
-                function = metric.get("function", "z_shape")
-                min_th = metric.get("min", nan_value)
-                max_th = metric.get("max", nan_value)
-                weight = metric.get("weight", 0)
-
-                for h in history:
-                    ts = int(h['clock'])
-                    dt = datetime.fromtimestamp(ts, tz=UTC)
-                    try:
-                        value = float(h['value'])
-                        if not math.isfinite(value):
-                            continue
-                        score = z_shape(value, min_th, max_th) if function == "z_shape" else s_shape(value, min_th, max_th)
-                        weighted = score * weight
-                        point = Point("raw_metrics").tag("target_host", simple_host).tag("host_id", host_id).field(metric_key, round(value, 4)).time(dt, WritePrecision.S)
-                        writeAPI(point)
-                        point = Point("score_metric").tag("target_host", simple_host).tag("host_id", host_id).field(metric_key, round(score, 4)).time(dt, WritePrecision.S)
-                        writeAPI(point)
-                        point = Point("weighted_score_metric").tag("target_host", simple_host).tag("host_id", host_id).field("weighted_score", round(weighted, 4)).time(dt, WritePrecision.S)
-                        writeAPI(point)
-                    except Exception:
-                        print('Failed to send points')
-
-
-
-
-                for win_start in shared_windows:
-                    win_end = win_start + AVERAGING_WINDOW
-                    window_data = [h for h in history if win_start <= int(h['clock']) < win_end and math.isfinite(float(h['value']))]
-                    if not window_data:
-                        continue
-
-                    raw_vals = [float(h['value']) for h in window_data]
-                    scores = [z_shape(v, min_th, max_th) if function == "z_shape" else s_shape(v, min_th, max_th) for v in raw_vals]
-                    weighted_scores = [s * weight for s in scores]
-
-                    avg_raw = sum(raw_vals) / len(raw_vals)
-                    avg_score = sum(scores) / len(scores)
-                    avg_weighted = sum(weighted_scores) / len(weighted_scores)
-
-                    all_windows[win_end]["scores"].append(avg_score * weight)
-                    all_windows[win_end]["weighted"].append(avg_weighted)
-                    all_windows[win_end]["raw"].append(avg_raw)
-
-                    avg_time = datetime.fromtimestamp(win_end, tz=UTC)
-
-                    point = Point("raw_metrics_avg").tag("target_host", simple_host).tag("host_id", host_id).field(metric_key, round(avg_raw, 4)).time(avg_time, WritePrecision.S)
-                    writeAPI(point)
-
-                    point = Point("score_metric_avg").tag("target_host", simple_host).tag("host_id", host_id).field(metric_key, round(avg_score, 4)).time(avg_time, WritePrecision.S)
-                    writeAPI(point)
-
-                    point = Point("weighted_score_metric_avg").tag("target_host", simple_host).tag("host_id", host_id).field("weighted_score", round(avg_weighted, 4)).time(avg_time, WritePrecision.S)
-                    writeAPI(point)
-
-        for win_end, data in all_windows.items():
-            if data["scores"]:
-                avg_host_score = sum(data["scores"])
-                weighted_host_score = avg_host_score * host_weight
-                avg_time = datetime.fromtimestamp(win_end, tz=UTC)
-                point = Point("host_score").tag("target_host", simple_host).tag("host_id", host_id).field("averaged_host_score", round(avg_host_score, 4)).time(avg_time, WritePrecision.S)
-                writeAPI(point)
-                host_score_data[win_end]["total"] += weighted_host_score
-                host_score_data[win_end]["weight"] += host_weight
-
-    for win_end, scores_dict in host_score_data.items():
-        if scores_dict["weight"] > 0:
-            system_avg = scores_dict["total"] / scores_dict["weight"]
-        else:
-            system_avg = 0.0
-        avg_time = datetime.fromtimestamp(win_end, tz=UTC)
-        point = Point("system_score").field("system_score", round(system_avg, 4)).time(avg_time, WritePrecision.S)
-        writeAPI(point)
-
-client.close()
-print('Finished...')
+    client.close()
+    print('Finished...')
