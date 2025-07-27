@@ -23,9 +23,9 @@
         {
           "name": "VM memory size",
           "key": "vm.memory.size[pavailable]",
-          "function": "z_shape",
-          "min": 0,
-          "max": 80,
+          "function": "s_shape",
+          "min": 10,
+          "max": 50,
           "weight": 0.33,
           "enabled": true
         },
@@ -62,7 +62,7 @@
 
     {
       "host": "Zabbix_Docker",
-      "host_name": "Zabbix_Docker",
+      "host_name": "Zabbix_Postgres",
       "host_weight": 0.34,
       "metrics": [
         
@@ -72,19 +72,31 @@
           "function": "z_shape",
           "min": 0,
           "max": 80,
-          "weight": 0.5,
+          "weight": 0.33,
           "enabled": true
         },
+        {
+          "name": "Memory Free Ratio",
+          "key": "docker.container_stats.memory.free_ratio[\"/zabbix-postgres-db-1\"]",
+          "function": "z_shape",
+          "min": 30,
+          "max": 90,
+          "weight": 0.34,
+          "enabled": true
+        },
+        
         {
           "name": "docker memory usage",
           
           "key": "docker.container_stats.memory.usage[\"/zabbix-postgres-db-1\"]",
           "function": "z_shape",
-          "min": 0,
-          "max": 2,
-          "weight": 0.5,
+          "min": 4000000000,
+          "max": 7000000000,
+          "weight": 0.33,
           "enabled": true
-        },              
+        },
+        
+        
         {
           "name": "docker.container_stats.cpu_usage.kernel",
           "key": "docker.container_stats.cpu_usage.kernel.rate[\"/zabbix-postgres-db-1\"]",
@@ -92,7 +104,7 @@
           "min": 0,
           "max": 80,
           "weight": 0.5,
-          "enabled": true
+          "enabled": false
         }
       ]
     }

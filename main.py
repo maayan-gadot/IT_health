@@ -3,10 +3,7 @@ import requests
 import json
 import glob
 import time
-from datetime import datetime, UTC, timedelta
-import math
-from collections import defaultdict
-from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 os.system('cls' if os.name == 'nt' else 'clear') 
@@ -107,11 +104,15 @@ def read_latest_cf_authorization_token(folder_path, prefix):
 def writeAPI(point: Point):
     try:
         line = point.to_line_protocol()
+        # print(f"[DEBUG] Writing to Influx: {line}")
         response = requests.post(INFLUX_URL, params=params, headers=headers_influx, data=line)
         if not response.ok:
             print(f"❌ Failed to write to InfluxDB: {response.status_code} {response.text}")
+        # else:
+        #     print(f"✅ OK")
     except Exception as e:
-        print(f"❌ Exception during write:{e}")
+        print(f"❌ Exception during write: {e}")
+
 
 def s_shape(val, min_th, max_th):
     try:

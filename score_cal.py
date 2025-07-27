@@ -24,7 +24,8 @@ def run(config, auth_token, headers_zabbix, TIME_WINDOW, AVERAGING_WINDOW, MOVIN
         for target in targets:
             host_id = get_host_id(auth_token, target["host"], headers_zabbix)
             if not host_id:
-                continue
+                print("host not found")
+            # print(target["host"])
             items = get_metrics(auth_token, host_id, headers_zabbix)
             items_dict = {item['key_']: item for item in items}
             for metric in target["metrics"]:
@@ -32,7 +33,8 @@ def run(config, auth_token, headers_zabbix, TIME_WINDOW, AVERAGING_WINDOW, MOVIN
                     continue
                 item = items_dict.get(metric["key"])
                 if not item:
-                    continue
+                    print("metric not found")
+                # print(item)
                 history = get_history(auth_token, item['itemid'], TIME_WINDOW, headers_zabbix)
                 clocks = [int(h['clock']) for h in history if 'clock' in h]
                 all_clocks.extend(clocks)
@@ -43,28 +45,32 @@ def run(config, auth_token, headers_zabbix, TIME_WINDOW, AVERAGING_WINDOW, MOVIN
 
     for host_name, host_targets in grouped_by_host_name.items():
         if not host_targets:
-            continue
+            print("no hosts found")
 
         first_host = host_targets[0]
         host_id = get_host_id(auth_token, first_host["host"], headers_zabbix)
         if not host_id:
-            continue
+            print("host not found")
 
         simple_host = host_name.lower().replace(" ", "_")
         items = get_metrics(auth_token, host_id, headers_zabbix)
         items_dict = {item['key_']: item for item in items}
-
+        # print(items_dict)
         histories = {}
         all_windows = defaultdict(lambda: {"scores": [], "weighted": [], "raw": []})
 
         for target in host_targets:
+            # print(target)
             target_metrics = target["metrics"]
             host_weight = target.get("host_weight", 1.0)
 
+            print(target_metrics)
+
             for metric in target_metrics:
                 metric_key = metric.get("key")
+                print(metric_key)
                 if not metric.get("enabled", True) or metric_key not in items_dict:
-                    continue
+                    print("metric not found" + metric_key)
 
                 item = items_dict[metric_key]
                 value_type = int(item.get("value_type", 0))
@@ -77,10 +83,12 @@ def run(config, auth_token, headers_zabbix, TIME_WINDOW, AVERAGING_WINDOW, MOVIN
 
         for metric_key, history in histories.items():
             for target in host_targets:
+                print(target["host"])
                 metric = next((m for m in target['metrics'] if m['key'] == metric_key), None)
                 if not metric:
-                    continue
+                    print("metric not found: " + metric["name"])
 
+                print(metric["name"])
                 function = metric.get("function", "z_shape")
                 min_th = metric.get("min", float('nan'))
                 max_th = metric.get("max", float('nan'))
